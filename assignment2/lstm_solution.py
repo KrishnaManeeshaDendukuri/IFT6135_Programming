@@ -75,7 +75,17 @@ class LSTM(nn.Module):
         # ==========================
         # TODO: Write your code here
         # ==========================
-        pass
+        print("forward impln")
+        print(self.vocabulary_size, self.embedding_size)
+        lstm_in = self.embedding(inputs)
+        print(lstm_in.shape)
+        output, hidden = self.lstm(lstm_in, hidden_states)
+        print(output.shape)
+        output = self.classifier(output)
+        print("after classifier shape")
+        print(output.shape)
+        log_probas = F.log_softmax(output, dim = 2)
+        return log_probas, hidden
 
     def loss(self, log_probas, targets, mask):
         """Loss function.
@@ -106,7 +116,18 @@ class LSTM(nn.Module):
         # ==========================
         # TODO: Write your code here
         # ==========================
-        pass
+        print("loss impln")
+        log_probas = log_probas.transpose(2,1)
+        print(log_probas.shape, targets.shape)
+        criterion = nn.NLLLoss(reduction='none')
+        loss = criterion(log_probas, targets)
+        print(loss.shape)
+        # masked_loss = torch.where(mask == 1, loss, mask)
+        # print(masked_loss.shape)
+        masked_loss = (loss*mask).sum(dim=1)/mask.sum(dim=1)
+        mean_loss = torch.mean(masked_loss, 0)
+        print(mean_loss)
+        return mean_loss
 
     def initial_states(self, batch_size, device=None):
         if device is None:
