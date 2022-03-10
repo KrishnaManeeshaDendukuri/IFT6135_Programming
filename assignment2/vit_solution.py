@@ -39,7 +39,16 @@ class LayerNorm(nn.Module):
         # ==========================
         # TODO: Write your code here
         # ==========================
-        pass
+        print("######## shapes ############")
+        print(self.hidden_size)
+        print(inputs.shape)
+        
+        mean = torch.mean(inputs, dim=-1, keepdim=True)
+        var = torch.var(inputs, dim=-1, keepdim = True, unbiased=False)
+        # var = torch.mean((inputs-mean)**2, -1, keepdim = True)
+        scale = (inputs - mean) / torch.sqrt(var + self.eps)
+        ln_output = scale * self.weight + self.bias
+        return ln_output
 
     def reset_parameters(self):
         nn.init.ones_(self.weight)
@@ -52,6 +61,31 @@ class MultiHeadedAttention(nn.Module):
         self.head_size = head_size
         self.num_heads = num_heads
         self.sequence_length = sequence_length
+
+        # self.in_proj_weight = nn.Parameter(torch.empty((3 * embed_dim, embed_dim)))
+        # self.register_parameter('q_proj_weight', None)
+        # self.register_parameter('k_proj_weight', None)
+        # self.register_parameter('v_proj_weight', None)
+
+        # self.register_parameter('in_proj_bias', None)
+        # self.bias_q = self.bias_k = self.bias_v = None
+        # self.out_proj = NonDynamicallyQuantizableLinear(embed_dim, embed_dim, bias=bias)
+
+        # self.q_proj_weight = nn.Parameter(torch.Tensor(self.head_size))
+        # self.k_proj_weight = nn.Parameter(torch.Tensor(self.head_size))
+        # self.v_proj_weight = nn.Parameter(torch.Tensor(self.head_size))
+
+        # self.bias_q = nn.Parameter(torch.Tensor(self.head_size))
+        # self.bias_k = nn.Parameter(torch.Tensor(self.head_size))
+        # self.bias_v = nn.Parameter(torch.Tensor(self.head_size))
+
+        # self.out_proj_weight = nn.Parameter(torch.Tensor(self.head_size))
+        # self.bias_out = nn.Parameter(torch.Tensor(self.head_size))
+        d_model = self.head_size* self.num_heads
+        self.q_linear = nn.Linear(d_model, d_model, bias=True)
+        self.k_linear = nn.Linear(d_model, d_model, bias=True)
+        self.v_linear = nn.Linear(d_model, d_model, bias=True)
+        self.final_linear = nn.Linear(d_model, d_model, bias=True)
 
         # ==========================
         # TODO: Write your code here
@@ -90,7 +124,9 @@ class MultiHeadedAttention(nn.Module):
         # ==========================
         # TODO: Write your code here
         # ==========================
-        pass
+        scores = torch.matmul(queries, keys.transpose(-2, -1)) /  math.sqrt(self.head_size)
+        scores = F.softmax(scores, dim=-1)
+        return scores
 
     def apply_attention(self, queries, keys, values):
         """Apply the attention.
@@ -133,7 +169,13 @@ class MultiHeadedAttention(nn.Module):
         # ==========================
         # TODO: Write your code here
         # ==========================
-        pass
+        print("apply_attention impln")
+        attention_weights = self.get_attention_weights(queries, keys)
+        attention_heads = torch.matmul(attention_weights, values)
+        print(attention_heads.shape)
+        merged_heads = self.merge_heads(attention_heads)
+        print(merged_heads.shape)
+        return merged_heads
 
     def split_heads(self, tensor):
         """Split the head vectors.
@@ -162,7 +204,13 @@ class MultiHeadedAttention(nn.Module):
         # ==========================
         # TODO: Write your code here
         # ==========================
-        pass
+        print("split_heads impln")
+        batch_size, seq_len, merged_dim = tensor.shape
+        dim = merged_dim // self.num_heads
+        tensor = tensor.view(batch_size, seq_len, self.num_heads, dim)
+        output = tensor.transpose(1,2)
+        print(output.shape)
+        return output
 
     def merge_heads(self, tensor):
         """Merge the head vectors.
@@ -190,7 +238,12 @@ class MultiHeadedAttention(nn.Module):
         # ==========================
         # TODO: Write your code here
         # ==========================
-        pass
+        print("merge_heads impln")
+        batch_size, _, seq_len, _ = tensor.shape
+        tensor = tensor.transpose(1, 2)
+        output = tensor.contiguous().view(batch_size, seq_len, -1)
+        print(output.shape)
+        return output
 
     def forward(self, hidden_states):
         """Multi-headed attention.
@@ -227,7 +280,29 @@ class MultiHeadedAttention(nn.Module):
         # ==========================
         # TODO: Write your code here
         # ==========================
-        pass
+        print(hidden_states.shape)
+        # multi_heads = self.split_heads(hidden_states)
+        # print(hidden_states.shape)
+        # print(multi_heads.shape)
+        # Q = torch.matmul(multi_heads, self.q_proj_weight) +self.bias_q
+        # K = torch.matmul(multi_heads, self.k_proj_weight) +self.bias_k
+        # V = torch.matmul(multi_heads, self.v_proj_weight) +self.bias_v
+        print("forward impln")
+        Q = self.q_linear(hidden_states)
+        K = self.k_linear(hidden_states)
+        V = self.v_linear(hidden_states)
+        
+        print(Q.shape, K.shape, V.shape)
+
+        Q = self.split_heads(Q)
+        K = self.split_heads(K)
+        V = self.split_heads(V)
+        Y = self.apply_attention(Q,K,V)
+        print(Y.shape)
+        output = self.final_linear(Y)
+        return output
+
+
 
 class PostNormAttentionBlock(nn.Module):
     
@@ -300,8 +375,15 @@ class PreNormAttentionBlock(nn.Module):
         # ==========================
         # TODO: Write your code here
         # ==========================
-        pass
+        layernorm_1_out = self.layer_norm_1(x)
+        attention_out = self.attn(layernorm_1_out)
+        add_out = x + attention_out
 
+        layernorm_2_out = self.layer_norm_2(add_out)
+        ffn_out = self.linear(layernorm_2_out)   
+
+        output = add_out + ffn_out
+        return output
 
 
 class VisionTransformer(nn.Module):
@@ -357,7 +439,37 @@ class VisionTransformer(nn.Module):
         # ==========================
         # TODO: Write your code here
         # ==========================
-        pass
+        print("get patches impln")
+
+        # embed_dim=256
+        # B,C,H,W = image.shape
+        # self.n_patches = (H//patch_size)*(W//patch_size)
+        # print(B,C,H,W)
+
+        # self.proj = nn.Conv2d(
+        #         C,
+        #         patch_size*patch_size*C,
+        #         kernel_size=patch_size,
+        #         stride=patch_size,
+        # )
+        
+        # x = self.proj(image)
+        # print(image.shape, x.shape)
+        # if flatten_channels:
+        #     image_seq = x.flatten(2)  # (n_samples, embed_dim, n_patches)
+        #     print(image_seq.shape)
+        # else:
+        #     image_seq = x
+        # print(f"n patches = {self.n_patches}")
+        # image_seq = image_seq.transpose(1, 2) 
+
+        B, C, H, W = image.shape
+        image = image.reshape(B, C, H//patch_size, patch_size, W//patch_size, patch_size)
+        image = image.permute(0, 2, 4, 1, 3, 5) # [B, H', W', C, p_H, p_W]
+        image = image.flatten(1,2)              # [B, H'*W', C, p_H, p_W]
+        if flatten_channels:
+            image = image.flatten(2,4)
+        return image
 
 
     def forward(self, x):
@@ -391,17 +503,21 @@ class VisionTransformer(nn.Module):
         # TODO: Write your code here
         # ==========================
         
+        x = self.dropout(x)
 
+        # x = x.transpose(0, 1)
+        x = self.transformer(x)
         #Take the cls token representation and send it to mlp_head
 
         # ==========================
         # TODO: Write your code here
         # ==========================
+        # print(f"cls_token representatiom? {x.shape}")
+        # print(x[-1].shape)
+        cls = x[:, 0, :]
+        output = self.mlp_head(cls)
+        return output
         
-        
-    
-        
-        pass
     def loss(self,preds,labels):
         '''Loss function.
 
@@ -414,4 +530,5 @@ class VisionTransformer(nn.Module):
         # ==========================
         # TODO: Write your code here
         # ==========================
-        pass
+        loss = F.cross_entropy(preds, labels)
+        return loss        
