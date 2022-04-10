@@ -20,7 +20,23 @@ def lp_reg(x, y, critic):
     :param critic: (Module) - torch module that you want to regularize.
     :return: (FloatTensor) - shape: (1,) - Lipschitz penalty
     """
-    pass
+    # u_dist = torch.distributions.Uniform(0,1)
+   # to be used as loss? 
+    batch_size = x.size(2)
+    a = torch.FloatTensor(batch_size).uniform_(0, 1)
+    z = x*a[:,None] + y*(1 - a[:,None])
+    z = torch.autograd.Variable(z,requires_grad=True)
+
+    f_z = critic(z)
+
+    grad_z = torch.autograd.grad(outputs=f_z, inputs=z,
+                               grad_outputs=torch.ones(f_z.size()),
+                               create_graph=True, retain_graph=True)[0]
+
+    grad_z = grad_z.view(grad_z.size(0),-1)
+
+    lp = torch.mean(torch.relu(torch.norm(grad_z,p=2,dim=-1, keepdim=True)-1)**2,dim=0)
+    return lp
 
 
 def vf_wasserstein_distance(p, q, critic):
@@ -37,7 +53,11 @@ def vf_wasserstein_distance(p, q, critic):
     :param critic: (Module) - torch module used to compute the Wasserstein distance
     :return: (FloatTensor) - shape: (1,) - Estimate of the Wasserstein distance
     """
-    pass
+    f_p = critic(p)
+    f_q = critic(q)
+
+    wass_dist = torch.mean(f_p, dim=0) - torch.mean(f_q, dim=0)
+    return wass_dist
 
 
 
@@ -79,10 +99,28 @@ if __name__ == '__main__':
             #####
             # train the critic model here
             #####
+            optim_critic.zero_grad()
+            generated_data = generator(torch.rand(data.shape[0], z_dim).to(device))
+            
+            d_real = critic(data)
+            d_generated = critic(gen_data)
+
+            gp = lp_reg(data,generated_data,critic)
+            d_loss = vf_wasserstein_distance(d_real, d_generated, critic) + lp_coeff * gp
+
+            d_loss.backward()
+            optim_critic.step()
+
 
         #####
         # train the generator model here
         #####
+        optim_generator.zero_grad()
+        generated_data = generator(torch.rand(data.shape[0], z_dim).to(device))
+        d_generated = critic(generated_data)
+        g_loss = - d_generated.mean()
+        g_loss.backward()
+        self.G_opt.step()
 
         # Save sample images 
         if i % 100 == 0:
