@@ -74,6 +74,16 @@ class SimSiam(nn.Module):
         COMPLETE ME. DONT MODIFY THE PARAMETERS OF THE FUNCTION. Otherwise, tests might fail.
         Note that the outputs are differnt if stop_gradient is True or False
         """
+        z1 = self.encoder(x1) # NxC
+        z2 = self.encoder(x2) # NxC
+
+        p1 = self.predictor(z1) # NxC
+        p2 = self.predictor(z2) # NxC
+
+        if self.stop_gradient == True:
+            return p1, p2, z1.detach(), z2.detach()
+        else:
+            return p1, p2, z1, z2
 
     def loss (self, p1,p2,z1,z2, similarity_function='CosineSimilarity'):
         """ 
@@ -85,6 +95,15 @@ class SimSiam(nn.Module):
         """
         COMPLETE ME. DONT MODIFY THE PARAMETERS OF THE FUNCTION. Otherwise, tests might fail.
         """
+        criterion = CosineSimilarity()
+        l1 = criterion(p1, z2.detach()).mean()
+        print(l1)
+        l2 = criterion(p2, z1.detach()).mean()
+        print(l2)
+        loss = -(l1 + l2) * 0.5
+        print(loss)
+        return loss
+
 
 # you might need this function when implementing CosineSimilarity forward function
 def bdot(a, b):
@@ -131,3 +150,5 @@ class CosineSimilarity(Module):
         """
         COMPLETE ME. DONT MODIFY THE PARAMETERS OF THE FUNCTION. Otherwise, tests might fail.
         """
+        cossim = nn.CosineSimilarity(self.dim, self.eps)
+        return cossim(x1, x2)
